@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:core' as core;
+import 'dart:core';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:http/http.dart' as http;
 import 'package:sunmi_printer_plus/sunmi_printer_plus.dart';
-import 'package:sunmi_printer_plus/enums.dart';
+import 'package:sunmi_printer_plus/enums.dart' hide List;
 import 'package:sunmi_printer_plus/sunmi_style.dart';
 
 void main() async {
@@ -119,7 +121,7 @@ class SunmiPrinterHelper {
     required String storeAddress,
     required String storePhone,
     required String tableName,
-    required List items,
+    required core.List items,
     required int total,
     required String paymentMethod,
     required bool isKitchenTicket,
@@ -218,14 +220,14 @@ class _PosMainScreenState extends State<PosMainScreen> {
   String storePhone = '0328000203';
   String googleSheetWebhookUrl = '';
 
-  List> allProducts = [];
-  List<String> categories = ['Tất cả'];
+  core.List> allProducts = [];
+  core.List<String> categories = ['Tất cả'];
   String selectedCategory = 'Tất cả';
 
   int? currentOrderId;
   String currentTableName = 'Mang về';
-  List> cart = [];
-  List> openOrders = [];
+  core.List> cart = [];
+  core.List> openOrders = [];
 
   @override
   void initState() {
@@ -801,7 +803,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
                         children: [
                           ElevatedButton(
                             onPressed: () {
-                              final rawList = jsonDecode(ord['items_json'].toString()) as List;
+                              final rawList = jsonDecode(ord['items_json'].toString()) as core.List;
                               final decoded = rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
                               setState(() {
                                 currentOrderId = ord['id'] as int;
@@ -1020,7 +1022,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
     );
   }
 
-  Future<String> _exportToCsv(List orderList, String exportDate) async {
+  Future<String> _exportToCsv(core.List orderList, String exportDate) async {
     final dir = await getExternalStorageDirectory();
     final file = File('${dir!.path}/DoanhThu_$exportDate.csv');
 
@@ -1029,7 +1031,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
     csv.writeln('Mã Đơn,Thời Gian,Bàn/Kênh,Phương Thức,Tổng Tiền,Chi Tiết Món');
 
     for (var o in orderList) {
-      final rawItems = jsonDecode(o['items_json'].toString()) as List;
+      final rawItems = jsonDecode(o['items_json'].toString()) as core.List;
       final itemSummary = rawItems.map((i) => '${i['name']} (x${i['qty']})').join('; ');
       csv.writeln(
           '${o['id']},"${o['created_at']}","${o['table_name']}","${o['payment_method']}",${o['total']},"$itemSummary"');
