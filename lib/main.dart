@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:core' as core;
-import 'dart:core';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,7 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:http/http.dart' as http;
 import 'package:sunmi_printer_plus/sunmi_printer_plus.dart';
-import 'package:sunmi_printer_plus/enums.dart' hide List;
+import 'package:sunmi_printer_plus/enums.dart';
 import 'package:sunmi_printer_plus/sunmi_style.dart';
 
 void main() async {
@@ -44,13 +42,13 @@ class OchaLocalPosApp extends StatelessWidget {
 class LocalDatabase {
   static Database? _db;
 
-  static Future<Database> get db async {
+  static Future get db async {
     if (_db != null) return _db!;
     _db = await _initDb();
     return _db!;
   }
 
-  static Future<Database> _initDb() async {
+  static Future _initDb() async {
     final dbPath = await getDatabasesPath();
     final path = p.join(dbPath, 'ocha_local_sunmi.db');
 
@@ -107,7 +105,7 @@ class LocalDatabase {
 class SunmiPrinterHelper {
   static bool isConnected = false;
 
-  static Future<void> initPrinter() async {
+  static Future initPrinter() async {
     try {
       bool? bound = await SunmiPrinter.bindingPrinter();
       isConnected = bound ?? false;
@@ -116,12 +114,12 @@ class SunmiPrinterHelper {
     }
   }
 
-  static Future<void> printReceipt({
+  static Future printReceipt({
     required String storeName,
     required String storeAddress,
     required String storePhone,
     required String tableName,
-    required core.List items,
+    required dynamic items,
     required int total,
     required String paymentMethod,
     required bool isKitchenTicket,
@@ -168,10 +166,10 @@ class SunmiPrinterHelper {
           await SunmiPrinter.printText('  (*Ghi chú: $note)');
         }
         if (!isKitchenTicket) {
-          String leftCol = '  $qty x ${currency.format(price)}';
+          String leftCol = '  $qty x${currency.format(price)}';
           String rightCol = '${currency.format(subTotal)} đ';
           int spaces = 48 - leftCol.length - rightCol.length;
-          String line = leftCol + (' ' * (spaces > 0 ? spaces : 1)) + rightCol;
+          String line = leftCol + (' ' * (spaces.isNegative ? 1 : spaces + 1)) + rightCol;
           await SunmiPrinter.printText(line);
         } else {
           await SunmiPrinter.printText('  Số lượng: x$qty',
@@ -209,10 +207,10 @@ class PosMainScreen extends StatefulWidget {
   const PosMainScreen({super.key});
 
   @override
-  State<PosMainScreen> createState() => _PosMainScreenState();
+  State createState() => _PosMainScreenState();
 }
 
-class _PosMainScreenState extends State<PosMainScreen> {
+class _PosMainScreenState extends State {
   final currency = NumberFormat("#,###", "vi_VN");
 
   String storeName = 'LÁ CHUỐI QUÁN';
@@ -220,14 +218,14 @@ class _PosMainScreenState extends State<PosMainScreen> {
   String storePhone = '0328000203';
   String googleSheetWebhookUrl = '';
 
-  core.List> allProducts = [];
-  core.List<String> categories = ['Tất cả'];
+  var allProducts = [];
+  var categories = ['Tất cả'];
   String selectedCategory = 'Tất cả';
 
   int? currentOrderId;
   String currentTableName = 'Mang về';
-  core.List> cart = [];
-  core.List> openOrders = [];
+  var cart = [];
+  var openOrders = [];
 
   @override
   void initState() {
@@ -236,24 +234,27 @@ class _PosMainScreenState extends State<PosMainScreen> {
     _loadData();
   }
 
-  Future<void> _loadData() async {
-    final db = await LocalDatabase.db;
+  Future _loadData() async {
+    final Database db = await LocalDatabase.db;
     final prods = await db.query('products');
     final opens = await db.query('orders', where: "status = 'OPEN'", orderBy: 'id DESC');
 
-    final cats = <String>{'Tất cả'};
+    final cats = ['Tất cả'];
     for (var p in prods) {
-      cats.add(p['category'].toString());
+      final c = p['category'].toString();
+      if (!cats.contains(c)) {
+        cats.add(c);
+      }
     }
 
     setState(() {
       allProducts = prods;
-      categories = cats.toList();
+      categories = cats;
       openOrders = opens;
     });
   }
 
-  void _addToCart(Map<String, dynamic> product) {
+  void _addToCart(dynamic product) {
     setState(() {
       int index = cart.indexWhere((item) => item['id'] == product['id'] && (item['note'] ?? '') == '');
       if (index != -1) {
@@ -270,11 +271,17 @@ class _PosMainScreenState extends State<PosMainScreen> {
     });
   }
 
-  int get cartTotal => cart.fold(0, (sum, item) => sum + (item['price'] as int) * (item['qty'] as int));
+  int get cartTotal {
+    int sum = 0;
+    for (var item in cart) {
+      sum += (item['price'] as int) * (item['qty'] as int);
+    }
+    return sum;
+  }
 
-  Future<void> _saveOpenOrder({bool printKitchen = false}) async {
+  Future _saveOpenOrder({bool printKitchen = false}) async {
     if (cart.isEmpty) return;
-    final db = await LocalDatabase.db;
+    final Database db = await LocalDatabase.db;
     final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
 
     final data = {
@@ -315,9 +322,9 @@ class _PosMainScreenState extends State<PosMainScreen> {
     }
   }
 
-  Future<void> _checkoutOrder(String paymentMethod) async {
+  Future _checkoutOrder(String paymentMethod) async {
     if (cart.isEmpty) return;
-    final db = await LocalDatabase.db;
+    final Database db = await LocalDatabase.db;
     final now = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
 
     final data = {
@@ -358,7 +365,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
     await _loadData();
   }
 
-  Future<void> _syncSingleOrderToGoogleSheets(int orderId, Map<String, dynamic> orderData) async {
+  Future _syncSingleOrderToGoogleSheets(int orderId, dynamic orderData) async {
     try {
       final response = await http.post(
         Uri.parse(googleSheetWebhookUrl),
@@ -374,7 +381,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
       ).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200 || response.statusCode == 302) {
-        final db = await LocalDatabase.db;
+        final Database db = await LocalDatabase.db;
         await db.update('orders', {'synced': 1}, where: 'id = ?', whereArgs: [orderId]);
       }
     } catch (_) {}
@@ -384,7 +391,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
     setState(() {
       currentOrderId = null;
       currentTableName = 'Mang về';
-      cart.clear();
+      cart = [];
     });
   }
 
@@ -585,459 +592,4 @@ class _PosMainScreenState extends State<PosMainScreen> {
                                   child: Text(
                                     (item['note'] ?? '').toString().isEmpty
                                         ? '${currency.format(item['price'])} đ  •  + Ghi chú'
-                                        : '${currency.format(item['price'])} đ  •  Ghi chú: ${item['note']}',
-                                    style: TextStyle(
-                                      color: (item['note'] ?? '').toString().isEmpty
-                                          ? Colors.blueGrey
-                                          : Colors.deepOrange,
-                                    ),
-                                  ),
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
-                                      onPressed: () {
-                                        setState(() {
-                                          int q = item['qty'] as int;
-                                          if (q > 1) {
-                                            item['qty'] = q - 1;
-                                          } else {
-                                            cart.removeAt(idx);
-                                          }
-                                        });
-                                      },
-                                    ),
-                                    Text('${item['qty']}',
-                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                    IconButton(
-                                      icon: const Icon(Icons.add_circle_outline, color: Colors.green),
-                                      onPressed: () => setState(() => item['qty'] = (item['qty'] as int) + 1),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      border: Border(top: BorderSide(color: Colors.grey.shade300)),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('TỔNG CỘNG:',
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                            Text(
-                              '${currency.format(cartTotal)} đ',
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFFD84315),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
-                                  side: const BorderSide(color: Colors.blueGrey),
-                                ),
-                                icon: const Icon(Icons.bookmark_add_outlined),
-                                label: const Text('LƯU ĐƠN', style: TextStyle(fontWeight: FontWeight.bold)),
-                                onPressed: () => _saveOpenOrder(printKitchen: false),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
-                                  side: const BorderSide(color: Colors.orange),
-                                  foregroundColor: Colors.deepOrange,
-                                ),
-                                icon: const Icon(Icons.print_outlined),
-                                label: const Text('LƯU & IN BẾP',
-                                    style: TextStyle(fontWeight: FontWeight.bold)),
-                                onPressed: () => _saveOpenOrder(printKitchen: true),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF2E7D32),
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                ),
-                                icon: const Icon(Icons.payments_outlined),
-                                label: const Text('TIỀN MẶT (IN BILL)',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                onPressed: () => _checkoutOrder('Tiền mặt'),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF1565C0),
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                ),
-                                icon: const Icon(Icons.qr_code_2),
-                                label: const Text('CHUYỂN KHOẢN',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                onPressed: () => _checkoutOrder('Chuyển khoản'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showSelectTableDialog() {
-    final tables = [
-      'Mang về', 'ShopeeFood', 'GrabFood',
-      'Bàn 1', 'Bàn 2', 'Bàn 3', 'Bàn 4', 'Bàn 5',
-      'Bàn 6', 'Bàn 7', 'Bàn 8', 'Bàn 9', 'Bàn 10'
-    ];
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Chọn Bàn / Kênh bán'),
-        content: SizedBox(
-          width: 500,
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: tables.map((t) {
-              return ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: currentTableName == t ? Colors.deepOrange : Colors.blueGrey,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                ),
-                onPressed: () {
-                  setState(() => currentTableName = t);
-                  Navigator.pop(context);
-                },
-                child: Text(t, style: const TextStyle(fontSize: 16)),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showNoteDialog(int cartIndex) {
-    final ctrl = TextEditingController(text: (cart[cartIndex]['note'] ?? '').toString());
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Ghi chú món: ${cart[cartIndex]['name']}'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'VD: Ít hành, không chả, mang về riêng...'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
-          ElevatedButton(
-            onPressed: () {
-              setState(() => cart[cartIndex]['note'] = ctrl.text.trim());
-              Navigator.pop(context);
-            },
-            child: const Text('Lưu'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showOpenOrdersModal() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Danh sách Đơn đang mở (Chưa thanh toán)'),
-        content: SizedBox(
-          width: 650,
-          height: 400,
-          child: openOrders.isEmpty
-              ? const Center(child: Text('Không có đơn nào đang lưu.'))
-              : ListView.separated(
-                  itemCount: openOrders.length,
-                  separatorBuilder: (_, __) => const Divider(),
-                  itemBuilder: (context, idx) {
-                    final ord = openOrders[idx];
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Colors.orange.shade800,
-                        child: const Icon(Icons.restaurant, color: Colors.white),
-                      ),
-                      title: Text('${ord['table_name']}  •  ${currency.format(ord['total'])} đ',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-                      subtitle: Text('Giờ mở đơn: ${ord['created_at']}'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ElevatedButton(
-                            onPressed: () {
-                              final rawList = jsonDecode(ord['items_json'].toString()) as core.List;
-                              final decoded = rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-                              setState(() {
-                                currentOrderId = ord['id'] as int;
-                                currentTableName = ord['table_name'].toString();
-                                cart = decoded;
-                              });
-                              Navigator.pop(context);
-                            },
-                            child: const Text('Mở đơn / Tính tiền'),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () async {
-                              final db = await LocalDatabase.db;
-                              await db.delete('orders', where: 'id = ?', whereArgs: [ord['id']]);
-                              await _loadData();
-                              if (mounted) Navigator.pop(context);
-                            },
-                          )
-                        ],
-                      ),
-                    );
-                  },
-                ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Đóng')),
-        ],
-      ),
-    );
-  }
-
-  void _showAddProductDialog() {
-    final catCtrl = TextEditingController(text: 'Bánh Cuốn Nóng');
-    final nameCtrl = TextEditingController();
-    final priceCtrl = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Thêm món mới vào Menu'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: catCtrl, decoration: const InputDecoration(labelText: 'Danh mục')),
-            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Tên món')),
-            TextField(
-              controller: priceCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Giá bán (VNĐ)'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameCtrl.text.isNotEmpty && priceCtrl.text.isNotEmpty) {
-                final db = await LocalDatabase.db;
-                await db.insert('products', {
-                  'category': catCtrl.text.trim(),
-                  'name': nameCtrl.text.trim(),
-                  'price': int.tryParse(priceCtrl.text.trim()) ?? 0,
-                });
-                await _loadData();
-                if (mounted) Navigator.pop(context);
-              }
-            },
-            child: const Text('Thêm món'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showReportAndExportModal() async {
-    final db = await LocalDatabase.db;
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final paidOrders = await db.query(
-      'orders',
-      where: "status = 'PAID' AND created_at LIKE ?",
-      whereArgs: ['$today%'],
-      orderBy: 'id DESC',
-    );
-
-    int totalRevenue = 0;
-    int cashTotal = 0;
-    int transferTotal = 0;
-
-    for (var o in paidOrders) {
-      int t = o['total'] as int;
-      totalRevenue += t;
-      if (o['payment_method'] == 'Tiền mặt') {
-        cashTotal += t;
-      } else {
-        transferTotal += t;
-      }
-    }
-
-    final webhookCtrl = TextEditingController(text: googleSheetWebhookUrl);
-
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Báo cáo Doanh thu Hôm nay ($today)'),
-        content: SizedBox(
-          width: 700,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _summaryCard('Tổng số đơn', '${paidOrders.length} đơn', Colors.blueGrey),
-                    _summaryCard('Tiền mặt', '${currency.format(cashTotal)} đ', Colors.green),
-                    _summaryCard('Chuyển khoản', '${currency.format(transferTotal)} đ', Colors.blue),
-                    _summaryCard('TỔNG DOANH THU', '${currency.format(totalRevenue)} đ', Colors.deepOrange),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                const Text('Cấu hình Google Apps Script Webhook (Tự động đổ vào Google Sheets):',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: webhookCtrl,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: 'https://script.google.com/macros/s/.../exec',
-                  ),
-                  onChanged: (val) => googleSheetWebhookUrl = val.trim(),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-            icon: const Icon(Icons.print),
-            label: const Text('In Báo Cáo Kết Ca (K80)'),
-            onPressed: () async {
-              await SunmiPrinter.initPrinter();
-              await SunmiPrinter.startTransactionPrint(true);
-              await SunmiPrinter.setAlignment(SunmiPrintAlign.CENTER);
-              await SunmiPrinter.printText('BÁO CÁO KẾT CA ($today)',
-                  style: SunmiStyle(fontSize: SunmiFontSize.LG, bold: true));
-              await SunmiPrinter.setAlignment(SunmiPrintAlign.LEFT);
-              await SunmiPrinter.printText('------------------------------------------------');
-              await SunmiPrinter.printText('Tổng số đơn đã thanh toán: ${paidOrders.length}');
-              await SunmiPrinter.printText('Doanh thu Tiền mặt:      ${currency.format(cashTotal)} đ');
-              await SunmiPrinter.printText('Doanh thu Chuyển khoản:  ${currency.format(transferTotal)} đ');
-              await SunmiPrinter.printText('------------------------------------------------');
-              await SunmiPrinter.printText('TỔNG DOANH THU:          ${currency.format(totalRevenue)} đ',
-                  style: SunmiStyle(fontSize: SunmiFontSize.LG, bold: true));
-              await SunmiPrinter.lineWrap(4);
-              await SunmiPrinter.cut();
-              await SunmiPrinter.exitTransactionPrint(true);
-            },
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade800),
-            icon: const Icon(Icons.file_download),
-            label: const Text('Xuất file CSV vào máy Sunmi'),
-            onPressed: () async {
-              final path = await _exportToCsv(paidOrders, today);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Đã lưu CSV tại: $path')),
-                );
-              }
-            },
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700),
-            icon: const Icon(Icons.cloud_upload),
-            label: const Text('Đồng bộ tất cả lên Google Sheets'),
-            onPressed: () async {
-              googleSheetWebhookUrl = webhookCtrl.text.trim();
-              for (var ord in paidOrders) {
-                if (ord['synced'] == 0 && googleSheetWebhookUrl.isNotEmpty) {
-                  await _syncSingleOrderToGoogleSheets(ord['id'] as int, ord);
-                }
-              }
-              if (mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Đã đồng bộ dữ liệu lên Google Sheets!')),
-                );
-              }
-            },
-          ),
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Đóng')),
-        ],
-      ),
-    );
-  }
-
-  Widget _summaryCard(String title, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color),
-      ),
-      child: Column(
-        children: [
-          Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 6),
-          Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  Future<String> _exportToCsv(core.List orderList, String exportDate) async {
-    final dir = await getExternalStorageDirectory();
-    final file = File('${dir!.path}/DoanhThu_$exportDate.csv');
-
-    StringBuffer csv = StringBuffer();
-    csv.write('\uFEFF');
-    csv.writeln('Mã Đơn,Thời Gian,Bàn/Kênh,Phương Thức,Tổng Tiền,Chi Tiết Món');
-
-    for (var o in orderList) {
-      final rawItems = jsonDecode(o['items_json'].toString()) as core.List;
-      final itemSummary = rawItems.map((i) => '${i['name']} (x${i['qty']})').join('; ');
-      csv.writeln(
-          '${o['id']},"${o['created_at']}","${o['table_name']}","${o['payment_method']}",${o['total']},"$itemSummary"');
-    }
-
-    await file.writeAsString(csv.toString());
-    return file.path;
-  }
-}
+                                        : '${currency.format(item['price']
