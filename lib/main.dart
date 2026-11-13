@@ -13,12 +13,10 @@ import 'package:sunmi_printer_plus/sunmi_style.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Khóa giao diện ngang chuẩn màn hình 15.6 inch của Sunmi T2
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
-  // Ẩn thanh trạng thái để chạy toàn màn hình như Ocha
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const OchaLocalPosApp());
 }
@@ -41,7 +39,6 @@ class OchaLocalPosApp extends StatelessWidget {
   }
 }
 
-// ==================== 1. CƠ SỞ DỮ LIỆU SQLITE LOCAL ====================
 class LocalDatabase {
   static Database? _db;
 
@@ -75,13 +72,12 @@ class LocalDatabase {
             items_json TEXT,
             total INTEGER,
             payment_method TEXT,
-            status TEXT, -- 'OPEN' (Lưu đơn) hoặc 'PAID' (Đã thanh toán)
+            status TEXT,
             created_at TEXT,
             synced INTEGER DEFAULT 0
           )
         ''');
 
-        // Khởi tạo menu mẫu ban đầu
         final initialMenu = [
           {'category': 'Bánh Cuốn Nóng', 'name': 'Bánh cuốn đặc biệt', 'price': 45000},
           {'category': 'Bánh Cuốn Nóng', 'name': 'Bánh cuốn thịt chả', 'price': 35000},
@@ -106,7 +102,6 @@ class LocalDatabase {
   }
 }
 
-// ==================== 2. ĐIỀU KHIỂN MÁY IN SUNMI T2 (K80) ====================
 class SunmiPrinterHelper {
   static bool isConnected = false;
 
@@ -124,7 +119,7 @@ class SunmiPrinterHelper {
     required String storeAddress,
     required String storePhone,
     required String tableName,
-    required List> items,
+    required List items,
     required int total,
     required String paymentMethod,
     required bool isKitchenTicket,
@@ -138,7 +133,6 @@ class SunmiPrinterHelper {
       await SunmiPrinter.initPrinter();
       await SunmiPrinter.startTransactionPrint(true);
 
-      // Header Hóa đơn
       await SunmiPrinter.setAlignment(SunmiPrintAlign.CENTER);
       if (isKitchenTicket) {
         await SunmiPrinter.printText('PHIẾU BẾP / TẠM TÍNH',
@@ -160,15 +154,14 @@ class SunmiPrinterHelper {
       await SunmiPrinter.printText('Thời gian: $now');
       await SunmiPrinter.printText('------------------------------------------------');
 
-      // Danh sách món ăn (Chuẩn khổ giấy K80 - 48 ký tự/dòng)
       for (var item in items) {
-        String name = item['name'];
-        int qty = item['qty'];
-        int price = item['price'];
+        String name = item['name'].toString();
+        int qty = item['qty'] as int;
+        int price = item['price'] as int;
         int subTotal = qty * price;
-        String note = item['note'] ?? '';
+        String note = (item['note'] ?? '').toString();
 
-        await SunmiPrinter.printText('$name', style: SunmiStyle(bold: true));
+        await SunmiPrinter.printText(name, style: SunmiStyle(bold: true));
         if (note.isNotEmpty) {
           await SunmiPrinter.printText('  (*Ghi chú: $note)');
         }
@@ -196,11 +189,9 @@ class SunmiPrinterHelper {
         await SunmiPrinter.printText('Cảm ơn Quý khách & Hẹn gặp lại!');
       }
 
-      // Đẩy giấy và gọi dao cắt tự động trên Sunmi T2
       await SunmiPrinter.lineWrap(4);
       await SunmiPrinter.cut();
 
-      // Kích bung két tiền RJ12 nếu thanh toán tiền mặt
       if (openCashDrawer) {
         await SunmiPrinter.openDrawer();
       }
@@ -212,7 +203,6 @@ class SunmiPrinterHelper {
   }
 }
 
-// ==================== 3. MÀN HÌNH BÁN HÀNG CHÍNH (BỐ CỤC OCHA) ====================
 class PosMainScreen extends StatefulWidget {
   const PosMainScreen({super.key});
 
@@ -223,22 +213,18 @@ class PosMainScreen extends StatefulWidget {
 class _PosMainScreenState extends State<PosMainScreen> {
   final currency = NumberFormat("#,###", "vi_VN");
 
-  // Thông tin quán mặc định (In lên hóa đơn)
   String storeName = 'LÁ CHUỐI QUÁN';
   String storeAddress = '203 Nguyễn Văn Trỗi, P.4, Vũng Tàu';
   String storePhone = '0328000203';
-  String googleSheetWebhookUrl = ''; // Dán URL Google Apps Script vào Cài đặt
+  String googleSheetWebhookUrl = '';
 
   List> allProducts = [];
   List<String> categories = ['Tất cả'];
   String selectedCategory = 'Tất cả';
 
-  // Giỏ hàng hiện tại
-  int? currentOrderId; // Nếu đang mở lại một đơn đã lưu
+  int? currentOrderId;
   String currentTableName = 'Mang về';
   List> cart = [];
-
-  // Danh sách đơn đang mở (Lưu đơn / Chưa thanh toán)
   List> openOrders = [];
 
   @override
@@ -269,7 +255,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
     setState(() {
       int index = cart.indexWhere((item) => item['id'] == product['id'] && (item['note'] ?? '') == '');
       if (index != -1) {
-        cart[index]['qty'] += 1;
+        cart[index]['qty'] = (cart[index]['qty'] as int) + 1;
       } else {
         cart.add({
           'id': product['id'],
@@ -284,7 +270,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
 
   int get cartTotal => cart.fold(0, (sum, item) => sum + (item['price'] as int) * (item['qty'] as int));
 
-  // Lưu đơn (Mở bàn & In phiếu bếp giống Ocha)
   Future<void> _saveOpenOrder({bool printKitchen = false}) async {
     if (cart.isEmpty) return;
     final db = await LocalDatabase.db;
@@ -328,7 +313,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
     }
   }
 
-  // Thanh toán & Cắt giấy hóa đơn + Đẩy lên Google Sheets (nếu có mạng)
   Future<void> _checkoutOrder(String paymentMethod) async {
     if (cart.isEmpty) return;
     final db = await LocalDatabase.db;
@@ -352,7 +336,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
       await db.update('orders', data, where: 'id = ?', whereArgs: [orderId]);
     }
 
-    // In hóa đơn K80 và bung két tiền nếu trả Tiền mặt
     await SunmiPrinterHelper.printReceipt(
       storeName: storeName,
       storeAddress: storeAddress,
@@ -365,7 +348,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
       openCashDrawer: paymentMethod == 'Tiền mặt',
     );
 
-    // Tự động bắn đơn lên Google Sheets ở chế độ chạy ngầm
     if (googleSheetWebhookUrl.isNotEmpty) {
       _syncSingleOrderToGoogleSheets(orderId, data);
     }
@@ -385,7 +367,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
           'table_name': orderData['table_name'],
           'payment_method': orderData['payment_method'],
           'total': orderData['total'],
-          'items': jsonDecode(orderData['items_json']),
+          'items': jsonDecode(orderData['items_json'].toString()),
         }),
       ).timeout(const Duration(seconds: 8));
 
@@ -393,9 +375,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
         final db = await LocalDatabase.db;
         await db.update('orders', {'synced': 1}, where: 'id = ?', whereArgs: [orderId]);
       }
-    } catch (_) {
-      // Nếu mất mạng sẽ tự lưu chờ đồng bộ sau trong mục Báo cáo
-    }
+    } catch (_) {}
   }
 
   void _clearCurrentOrder() {
@@ -406,7 +386,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
     });
   }
 
-  // ==================== GIAO DIỆN CHIA ĐÔI MÀN HÌNH Y HỆT OCHA ====================
   @override
   Widget build(BuildContext context) {
     final filteredProducts = selectedCategory == 'Tất cả'
@@ -414,7 +393,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
         : allProducts.where((p) => p['category'] == selectedCategory).toList();
 
     return Scaffold(
-      // Thanh Top Bar kiểu Ocha
       appBar: AppBar(
         backgroundColor: const Color(0xFF263238),
         elevation: 2,
@@ -424,7 +402,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
             const SizedBox(width: 8),
             Text(storeName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(width: 24),
-            // Nút chọn Bàn / Mang về
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade800),
               icon: const Icon(Icons.table_restaurant, size: 18),
@@ -432,19 +409,14 @@ class _PosMainScreenState extends State<PosMainScreen> {
               onPressed: _showSelectTableDialog,
             ),
             const SizedBox(width: 12),
-            // Nút Danh sách đơn đang lưu (Open Tickets như Ocha)
-            Badge(
-              label: Text('${openOrders.length}'),
-              isLabelVisible: openOrders.isNotEmpty,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: Colors.white54),
-                ),
-                icon: const Icon(Icons.receipt_long, size: 18),
-                label: const Text('Đơn đang mở'),
-                onPressed: _showOpenOrdersModal,
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white54),
               ),
+              icon: const Icon(Icons.receipt_long, size: 18),
+              label: Text('Đơn đang mở (${openOrders.length})'),
+              onPressed: _showOpenOrdersModal,
             ),
           ],
         ),
@@ -467,12 +439,10 @@ class _PosMainScreenState extends State<PosMainScreen> {
       ),
       body: Row(
         children: [
-          // ==================== BÊN TRÁI (2/3 MÀN HÌNH): DANH MỤC & MÓN ĂN ====================
           Expanded(
             flex: 65,
             child: Column(
               children: [
-                // Thanh chọn Danh mục (Categories)
                 Container(
                   height: 56,
                   color: Colors.white,
@@ -502,7 +472,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
                   ),
                 ),
                 const Divider(height: 1),
-                // Lưới ô chọn món (Grid 4 cột chuẩn màn hình ngang 15.6 inch)
                 Expanded(
                   child: GridView.builder(
                     padding: const EdgeInsets.all(12),
@@ -533,7 +502,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                item['name'],
+                                item['name'].toString(),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -566,17 +535,13 @@ class _PosMainScreenState extends State<PosMainScreen> {
               ],
             ),
           ),
-
           const VerticalDivider(width: 1, thickness: 1),
-
-          // ==================== BÊN PHẢI (1/3 MÀN HÌNH): GIỎ HÀNG & THANH TOÁN ====================
           Expanded(
             flex: 35,
             child: Container(
               color: Colors.white,
               child: Column(
                 children: [
-                  // Header Giỏ hàng
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     color: Colors.grey.shade100,
@@ -586,7 +551,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
                         Text(
                           currentOrderId == null
                               ? 'HÓA ĐƠN MỚI ($currentTableName)'
-                              : 'ĐƠN #${currentOrderId} ($currentTableName)',
+                              : 'ĐƠN #$currentOrderId ($currentTableName)',
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                         ),
                         if (cart.isNotEmpty)
@@ -599,8 +564,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
                     ),
                   ),
                   const Divider(height: 1),
-
-                  // Danh sách món trong giỏ
                   Expanded(
                     child: cart.isEmpty
                         ? const Center(
@@ -613,16 +576,16 @@ class _PosMainScreenState extends State<PosMainScreen> {
                             itemBuilder: (context, idx) {
                               final item = cart[idx];
                               return ListTile(
-                                title: Text(item['name'],
+                                title: Text(item['name'].toString(),
                                     style: const TextStyle(fontWeight: FontWeight.bold)),
                                 subtitle: GestureDetector(
                                   onTap: () => _showNoteDialog(idx),
                                   child: Text(
-                                    (item['note'] ?? '').isEmpty
+                                    (item['note'] ?? '').toString().isEmpty
                                         ? '${currency.format(item['price'])} đ  •  + Ghi chú'
                                         : '${currency.format(item['price'])} đ  •  Ghi chú: ${item['note']}',
                                     style: TextStyle(
-                                      color: (item['note'] ?? '').isEmpty
+                                      color: (item['note'] ?? '').toString().isEmpty
                                           ? Colors.blueGrey
                                           : Colors.deepOrange,
                                     ),
@@ -635,8 +598,9 @@ class _PosMainScreenState extends State<PosMainScreen> {
                                       icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
                                       onPressed: () {
                                         setState(() {
-                                          if (item['qty'] > 1) {
-                                            item['qty'] -= 1;
+                                          int q = item['qty'] as int;
+                                          if (q > 1) {
+                                            item['qty'] = q - 1;
                                           } else {
                                             cart.removeAt(idx);
                                           }
@@ -647,7 +611,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
                                         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                                     IconButton(
                                       icon: const Icon(Icons.add_circle_outline, color: Colors.green),
-                                      onPressed: () => setState(() => item['qty'] += 1),
+                                      onPressed: () => setState(() => item['qty'] = (item['qty'] as int) + 1),
                                     ),
                                   ],
                                 ),
@@ -655,8 +619,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
                             },
                           ),
                   ),
-
-                  // Khu vực Tổng tiền & Các nút chức năng giống Ocha
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -681,7 +643,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        // Hàng nút 1: Lưu đơn & In bếp
                         Row(
                           children: [
                             Expanded(
@@ -712,7 +673,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        // Hàng nút 2: Thanh toán Tiền mặt (Bung két) hoặc Chuyển khoản
                         Row(
                           children: [
                             Expanded(
@@ -754,8 +714,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
     );
   }
 
-  // ==================== CÁC HỘP THOẠI CHỨC NĂNG (BÀN, ĐƠN LƯU, BÁO CÁO CSV) ====================
-
   void _showSelectTableDialog() {
     final tables = [
       'Mang về', 'ShopeeFood', 'GrabFood',
@@ -791,7 +749,7 @@ class _PosMainScreenState extends State<PosMainScreen> {
   }
 
   void _showNoteDialog(int cartIndex) {
-    final ctrl = TextEditingController(text: cart[cartIndex]['note']);
+    final ctrl = TextEditingController(text: (cart[cartIndex]['note'] ?? '').toString());
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -843,11 +801,11 @@ class _PosMainScreenState extends State<PosMainScreen> {
                         children: [
                           ElevatedButton(
                             onPressed: () {
-                              final decoded = List>.from(
-                                  jsonDecode(ord['items_json']));
+                              final rawList = jsonDecode(ord['items_json'].toString()) as List;
+                              final decoded = rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
                               setState(() {
-                                currentOrderId = ord['id'];
-                                currentTableName = ord['table_name'];
+                                currentOrderId = ord['id'] as int;
+                                currentTableName = ord['table_name'].toString();
                                 cart = decoded;
                               });
                               Navigator.pop(context);
@@ -920,7 +878,6 @@ class _PosMainScreenState extends State<PosMainScreen> {
     );
   }
 
-  // ==================== BÁO CÁO CUỐI NGÀY, XUẤT CSV & ĐỒNG BỘ GOOGLE SHEETS ====================
   Future<void> _showReportAndExportModal() async {
     final db = await LocalDatabase.db;
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -1063,18 +1020,17 @@ class _PosMainScreenState extends State<PosMainScreen> {
     );
   }
 
-  Future<String> _exportToCsv(List> orders, String dateStr) async {
+  Future<String> _exportToCsv(List orderList, String exportDate) async {
     final dir = await getExternalStorageDirectory();
-    final file = File('${dir!.path}/DoanhThu_$dateStr.csv');
+    final file = File('${dir!.path}/DoanhThu_$exportDate.csv');
 
     StringBuffer csv = StringBuffer();
-    // BOM UTF-8 để mở bằng Excel không bị lỗi font tiếng Việt
     csv.write('\uFEFF');
     csv.writeln('Mã Đơn,Thời Gian,Bàn/Kênh,Phương Thức,Tổng Tiền,Chi Tiết Món');
 
-    for (var o in orders) {
-      final items = List>.from(jsonDecode(o['items_json']));
-      final itemSummary = items.map((i) => '${i['name']} (x${i['qty']})').join('; ');
+    for (var o in orderList) {
+      final rawItems = jsonDecode(o['items_json'].toString()) as List;
+      final itemSummary = rawItems.map((i) => '${i['name']} (x${i['qty']})').join('; ');
       csv.writeln(
           '${o['id']},"${o['created_at']}","${o['table_name']}","${o['payment_method']}",${o['total']},"$itemSummary"');
     }
